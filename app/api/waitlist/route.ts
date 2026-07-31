@@ -48,13 +48,36 @@ async function appendToGitHub(email: string) {
 
   const currentFileResponse = await fetch(repoUrl, { headers });
 
-  if (!currentFileResponse.ok) {
+  let currentFile: { content?: string; sha?: string } | null = null;
+
+  if (currentFileResponse.status === 404) {
+    const createResponse = await fetch(`https://api.github.com/repos/${repo}/contents/${filePath}`, {
+      method: "PUT",
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: "Create waitlist file",
+        content: Buffer.from("[]", "utf-8").toString("base64"),
+        branch,
+      }),
+    });
+
+    if (!createResponse.ok) {
+      const text = await createResponse.text();
+      throw new Error(`GitHub file creation failed: ${createResponse.status} ${text}`);
+    }
+
+    currentFile = { content: "[]", sha: undefined };
+  } else if (!currentFileResponse.ok) {
     const text = await currentFileResponse.text();
     throw new Error(`GitHub file fetch failed: ${currentFileResponse.status} ${text}`);
+  } else {
+    currentFile = await currentFileResponse.json();
   }
 
-  const currentFile = await currentFileResponse.json();
-  const currentContent = Buffer.from(currentFile.content || "", "base64").toString("utf-8");
+  const currentContent = Buffer.from(currentFile?.content || "", "base64").toString("utf-8");
 
   let entries: Array<{ email: string; createdAt: string }> = [];
 
@@ -86,7 +109,7 @@ async function appendToGitHub(email: string) {
     body: JSON.stringify({
       message: `Add waitlist email ${email}`,
       content: Buffer.from(nextContent, "utf-8").toString("base64"),
-      sha: currentFile.sha,
+      sha: currentFile?.sha,
       branch,
     }),
   });
